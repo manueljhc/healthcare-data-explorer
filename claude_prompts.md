@@ -67,3 +67,8 @@ ORDER BY year DESC, month DESC LIMIT 10000
 
 # Prompt #8
 Tool use rejected with user message: You should fix this by creating more general logic, such that chart type is actually defined for this query, instead of just handling the error more elegantly. I suspect the issue here might be that the suggest charts tool is not recognizing that the time series data with multiple dimensions returned by the query is perfect for a line graph or scatter plot.
+
+# Prompt #9
+A good data analyst finds points of comparison (e.g., a baseline) when conducting analysis. This baseline might be constructed using an aggregation of
+  historical data from the country in question - or similar countries - depending on the context of the question. Modify the system prompt such that
+  answers are always contextualized in this way.
