@@ -252,15 +252,9 @@ def format_markdown_response(text: str) -> str:
     """Fix common markdown formatting issues in responses."""
     import re
 
-    # Add newline before markdown headings that follow text without a newline
-    # Matches: text## Heading or text# Heading
-    text = re.sub(r'([^\n])(\n?)(#{1,6}\s)', r'\1\n\n\3', text)
-
-    # Ensure double newline before headings
-    text = re.sub(r'\n(#{1,6}\s)', r'\n\n\1', text)
-
-    # Remove triple+ newlines
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    # Ensure exactly one blank line before markdown headings
+    # Matches any number of newlines (including zero) before a heading and normalizes to two
+    text = re.sub(r'(?<=.)(\n*)(#{1,6}\s)', r'\n\n\2', text)
 
     return text
 

@@ -83,9 +83,15 @@ Open http://localhost:8501 in your browser.
 │     Interprets queries, coordinates tools, generates     │
 │              insights and visualizations                 │
 └─────────────────────────────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
+         │                 │                  │
+         │    ┌────────────┴────────────┐     │
+         │    ▼                         ▼     │
+         │  ┌───────────────────────────────┐ │
+         │  │      Data Dictionary          │ │
+         │  │  (Cached schema + metadata)   │ │
+         │  └───────────────────────────────┘ │
+         │           │ generated once         │
+         ▼           ▼                        ▼
 ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
 │   Discovery   │ │ SQL Executor  │ │ Visualization │
 │     Tool      │ │    Tool       │ │     Tool      │
@@ -98,6 +104,8 @@ Open http://localhost:8501 in your browser.
                     │  Database   │
                     └─────────────┘
 ```
+
+The **Data Dictionary** is generated once on startup by the Discovery Tool, then cached and shared with the Orchestrator and SQL Executor. This avoids repeated schema queries and provides consistent metadata context to the LLM.
 
 ## Security Measures
 
@@ -122,6 +130,7 @@ healthcare-data-explorer/
 │   └── visualization.py   # Plotly charts & insights
 ├── database/
 │   ├── connection.py      # DB connection management
+│   ├── data_dictionary.py # Cached schema & metadata (generated once)
 │   ├── setup_sample_data.py # Sample data generator
 │   └── healthcare.db      # SQLite database
 ├── utils/
