@@ -8,6 +8,7 @@ import streamlit as st
 
 from agent.orchestrator import HealthcareDataAgent
 from database.data_dictionary import get_data_dictionary, DataDictionary
+from tools.visualization import VisualizationTool
 
 
 # Page configuration
@@ -18,9 +19,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS
+# Custom CSS - narrower sidebar and improved styling
 st.markdown("""
 <style>
+    /* Narrower sidebar */
+    [data-testid="stSidebar"] {
+        min-width: 250px;
+        max-width: 280px;
+    }
+    [data-testid="stSidebar"] > div:first-child {
+        width: 250px;
+    }
+
     .stApp {
         max-width: 1400px;
         margin: 0 auto;
@@ -47,17 +57,16 @@ st.markdown("""
         border: 1px solid #e0e0e0;
         text-align: center;
     }
-    .data-dict-header {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
     .table-card {
         border: 1px solid #e0e0e0;
         border-radius: 0.5rem;
         padding: 1rem;
         margin-bottom: 1rem;
         background-color: #fafafa;
+    }
+    /* Better markdown rendering */
+    .stMarkdown h2 {
+        margin-top: 1.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -71,14 +80,16 @@ def init_session_state():
         st.session_state.data_dictionary = None
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if "query_results" not in st.session_state:
-        st.session_state.query_results = None
+    if "all_query_results" not in st.session_state:
+        st.session_state.all_query_results = []  # Store ALL query results
     if "visualizations" not in st.session_state:
         st.session_state.visualizations = []
-    if "pending_sql" not in st.session_state:
-        st.session_state.pending_sql = None
     if "show_data_dictionary" not in st.session_state:
         st.session_state.show_data_dictionary = False
+    if "show_db_overview" not in st.session_state:
+        st.session_state.show_db_overview = False
+    if "pending_query" not in st.session_state:
+        st.session_state.pending_query = None
 
 
 def get_data_dict() -> DataDictionary:
@@ -95,7 +106,6 @@ def get_agent() -> HealthcareDataAgent:
         if not api_key:
             st.error("Please set the ANTHROPIC_API_KEY environment variable")
             st.stop()
-        # Pass the shared data dictionary to the agent
         data_dict = get_data_dict()
         st.session_state.agent = HealthcareDataAgent(
             api_key=api_key,
@@ -133,7 +143,6 @@ def render_data_dictionary_dialog():
             st.markdown(f"**{table.description}**")
             st.markdown(f"📊 **{table.row_count:,}** rows")
 
-            # Column details table
             col_data = []
             for col in table.columns:
                 samples = ", ".join(str(v) for v in col.sample_values[:3])
@@ -171,38 +180,57 @@ def render_data_dictionary_dialog():
         )
 
 
+def render_db_overview_popup():
+    """Render database overview as a popup in the sidebar."""
+    data_dict = get_data_dict()
+
+    st.markdown("#### Database Tables")
+    for table in data_dict.tables:
+        with st.expander(f"📋 {table.name}", expanded=False):
+            st.caption(f"{table.row_count:,} rows")
+            st.markdown(f"*{table.description[:100]}...*" if len(table.description) > 100 else f"*{table.description}*")
+            cols = [col.name for col in table.columns]
+            st.code(", ".join(cols), language=None)
+
+    # Export buttons
+    st.markdown("---")
+    st.download_button(
+        "📥 Export Schema (JSON)",
+        data_dict.to_json(),
+        "schema.json",
+        "application/json",
+        use_container_width=True,
+        key="sidebar_export_json"
+    )
+
+
 def render_sidebar():
-    """Render the sidebar with database info and controls."""
+    """Render the sidebar with controls."""
     data_dict = get_data_dict()
 
     with st.sidebar:
-        st.title("🏥 AHDC Data Explorer")
-        st.markdown("---")
+        st.title("🏥 AHDC Explorer")
 
-        # Quick database overview from data dictionary
-        st.subheader("📊 Database Overview")
+        # Database overview toggle button
         total_rows = sum(t.row_count for t in data_dict.tables)
-        st.caption(f"{len(data_dict.tables)} tables • {total_rows:,} total rows")
+        st.caption(f"{len(data_dict.tables)} tables • {total_rows:,} rows")
 
-        for table in data_dict.tables:
-            with st.expander(f"📋 {table.name}"):
-                st.write(f"**Rows:** {table.row_count:,}")
-                st.write(f"**Description:** {table.description}")
-                st.write("**Columns:**")
-                for col in table.columns:
-                    pk = " 🔑" if col.primary_key else ""
-                    st.write(f"  • `{col.name}`{pk}")
+        if st.button("📊 Database Overview", use_container_width=True, type="secondary"):
+            st.session_state.show_db_overview = not st.session_state.show_db_overview
+
+        # Collapsible database overview
+        if st.session_state.show_db_overview:
+            with st.container():
+                render_db_overview_popup()
 
         st.markdown("---")
 
         # Controls
-        st.subheader("⚙️ Controls")
-
         if st.button("🔄 New Conversation", use_container_width=True):
             st.session_state.messages = []
-            st.session_state.query_results = None
+            st.session_state.all_query_results = []
             st.session_state.visualizations = []
-            st.session_state.pending_sql = None
+            st.session_state.pending_query = None
             if st.session_state.agent:
                 st.session_state.agent.reset_conversation()
             st.rerun()
@@ -211,15 +239,30 @@ def render_sidebar():
         if st.session_state.agent:
             history = st.session_state.agent.get_query_history()
             if history:
-                st.subheader("📜 Query History")
-                for i, q in enumerate(reversed(history[-5:])):
-                    with st.expander(f"Query {len(history) - i}"):
-                        st.code(q["query"], language="sql")
-                        st.write(f"Rows: {q['row_count']}, Time: {q['execution_time']:.2f}s")
+                with st.expander(f"📜 Query History ({len(history)})"):
+                    for i, q in enumerate(reversed(history[-5:])):
+                        st.code(q["query"][:100] + "..." if len(q["query"]) > 100 else q["query"], language="sql")
+                        st.caption(f"{q['row_count']} rows • {q['execution_time']:.2f}s")
 
         st.markdown("---")
-        st.caption(f"Generated: {data_dict.generated_at[:10] if data_dict.generated_at else 'N/A'}")
         st.caption("Powered by Claude & AHDC")
+
+
+def format_markdown_response(text: str) -> str:
+    """Fix common markdown formatting issues in responses."""
+    import re
+
+    # Add newline before markdown headings that follow text without a newline
+    # Matches: text## Heading or text# Heading
+    text = re.sub(r'([^\n])(\n?)(#{1,6}\s)', r'\1\n\n\3', text)
+
+    # Ensure double newline before headings
+    text = re.sub(r'\n(#{1,6}\s)', r'\n\n\1', text)
+
+    # Remove triple+ newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text
 
 
 def render_chat_message(message: dict):
@@ -233,13 +276,17 @@ def render_chat_message(message: dict):
     else:
         with st.chat_message("assistant"):
             if isinstance(content, str):
-                st.write(content)
+                # Apply markdown formatting fixes
+                formatted_content = format_markdown_response(content)
+                st.markdown(formatted_content)
             elif isinstance(content, dict):
                 if "text" in content:
-                    st.write(content["text"])
-                if "sql" in content:
-                    st.markdown("**Generated SQL:**")
-                    st.code(content["sql"], language="sql")
+                    formatted_text = format_markdown_response(content["text"])
+                    st.markdown(formatted_text)
+                if "sql_queries" in content:
+                    for i, sql in enumerate(content["sql_queries"]):
+                        st.markdown(f"**SQL Query {i+1}:**")
+                        st.code(sql, language="sql")
                 if "visualization" in content:
                     fig = pio.from_json(content["visualization"])
                     st.plotly_chart(fig, use_container_width=True)
@@ -249,54 +296,95 @@ def render_chat_message(message: dict):
                         st.markdown(f"• {insight['finding']}")
 
 
-def render_query_results(results: dict):
-    """Render query results with data table and export options."""
-    if not results or not results.get("success"):
+def render_query_results(results_list: list):
+    """Render all query results with data tables and export options."""
+    if not results_list:
         return
 
-    st.subheader("📊 Query Results")
+    for idx, results in enumerate(results_list):
+        if not results or not results.get("success"):
+            continue
 
-    # Metrics row
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Rows", f"{results['row_count']:,}")
-    with col2:
-        st.metric("Columns", len(results.get("columns", [])))
-    with col3:
-        st.metric("Query Time", f"{results['execution_time_seconds']:.3f}s")
+        st.subheader(f"📊 Query Results {idx + 1}" if len(results_list) > 1 else "📊 Query Results")
 
-    # SQL query
-    with st.expander("View SQL Query"):
-        st.code(results["query"], language="sql")
-
-    # Data table
-    if results.get("data"):
-        df = pd.DataFrame(results["data"])
-        st.dataframe(df, use_container_width=True, height=400)
-
-        # Export options
+        # Metrics row
         col1, col2, col3 = st.columns(3)
         with col1:
-            csv = df.to_csv(index=False)
-            st.download_button(
-                "📥 Download CSV",
-                csv,
-                "query_results.csv",
-                "text/csv",
-                use_container_width=True,
-            )
+            st.metric("Rows", f"{results['row_count']:,}")
         with col2:
-            json_str = df.to_json(orient="records", indent=2)
-            st.download_button(
-                "📥 Download JSON",
-                json_str,
-                "query_results.json",
-                "application/json",
-                use_container_width=True,
-            )
+            st.metric("Columns", len(results.get("columns", [])))
         with col3:
-            if st.button("📊 Visualize", use_container_width=True):
-                st.session_state.show_viz_options = True
+            st.metric("Query Time", f"{results['execution_time_seconds']:.3f}s")
+
+        # SQL query - always visible for each result
+        with st.expander("View SQL Query", expanded=False):
+            st.code(results["query"], language="sql")
+
+        # Data table
+        if results.get("data"):
+            df = pd.DataFrame(results["data"])
+            st.dataframe(df, use_container_width=True, height=min(400, 50 + len(df) * 35))
+
+            # Export and visualize options
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    "📥 Download CSV",
+                    csv,
+                    f"query_results_{idx + 1}.csv",
+                    "text/csv",
+                    use_container_width=True,
+                    key=f"csv_download_{idx}"
+                )
+            with col2:
+                json_str = df.to_json(orient="records", indent=2)
+                st.download_button(
+                    "📥 Download JSON",
+                    json_str,
+                    f"query_results_{idx + 1}.json",
+                    "application/json",
+                    use_container_width=True,
+                    key=f"json_download_{idx}"
+                )
+            with col3:
+                if st.button("📊 Visualize", use_container_width=True, key=f"viz_btn_{idx}"):
+                    create_visualization_for_results(results["data"], idx)
+
+        st.markdown("---")
+
+
+def create_visualization_for_results(data: list, result_idx: int):
+    """Create visualizations for query results."""
+    if not data:
+        st.warning("No data to visualize")
+        return
+
+    viz_tool = VisualizationTool()
+
+    # Get chart suggestions
+    suggestions = viz_tool.suggest_charts(data)
+
+    if not suggestions:
+        st.warning("No suitable visualizations found for this data")
+        return
+
+    # Create the top suggested chart
+    best_suggestion = suggestions[0]
+    chart_result = viz_tool.create_chart(
+        data,
+        chart_type=best_suggestion["chart_type"],
+        x=best_suggestion.get("x"),
+        y=best_suggestion.get("y"),
+        color=best_suggestion.get("color"),
+        title=f"Visualization: {best_suggestion.get('rationale', 'Data Chart')}"
+    )
+
+    if chart_result.get("success"):
+        st.session_state.visualizations.append(chart_result)
+        st.rerun()
+    else:
+        st.error(f"Failed to create visualization: {chart_result.get('error', 'Unknown error')}")
 
 
 def render_visualizations(visualizations: list):
@@ -315,67 +403,54 @@ def render_visualizations(visualizations: list):
                 st.error(f"Error rendering visualization: {e}")
 
 
-def render_insights(insights: dict):
-    """Render derived insights."""
-    if not insights or not insights.get("insights"):
-        return
-
-    st.subheader("💡 Key Insights")
-
-    for insight in insights["insights"]:
-        finding_type = insight.get("type", "general")
-        icon = {
-            "statistic": "📊",
-            "outlier": "⚠️",
-            "ranking": "🏆",
-            "concentration": "🎯",
-        }.get(finding_type, "💡")
-
-        st.markdown(f"{icon} {insight['finding']}")
-
-
 def process_user_query(query: str):
     """Process a user query through the agent."""
     agent = get_agent()
-
-    # Add user message
-    st.session_state.messages.append({"role": "user", "content": query})
 
     # Create placeholder for streaming response
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         full_response = ""
-        current_tool = None
+        sql_queries = []  # Track all SQL queries
 
         try:
             for chunk in agent.chat(query):
                 if chunk["type"] == "text":
                     full_response += chunk["content"]
-                    response_placeholder.markdown(full_response + "▌")
+                    # Apply formatting and show with cursor
+                    formatted = format_markdown_response(full_response)
+                    response_placeholder.markdown(formatted + "▌")
 
                 elif chunk["type"] == "tool_use":
-                    current_tool = chunk["tool_name"]
-                    with st.status(f"Using {current_tool}...", expanded=False):
+                    tool_name = chunk["tool_name"]
+                    with st.status(f"Using {tool_name}...", expanded=False):
                         st.json(chunk["tool_input"])
+
+                    # Track SQL queries
+                    if tool_name == "execute_sql":
+                        sql_queries.append(chunk["tool_input"].get("sql", ""))
 
                 elif chunk["type"] == "tool_result":
                     result = chunk["result"]
                     tool_name = chunk["tool_name"]
 
+                    # Store ALL query results, not just the last one
                     if tool_name == "execute_sql" and result.get("success"):
-                        st.session_state.query_results = result
+                        st.session_state.all_query_results.append(result)
 
                     elif tool_name == "create_chart" and result.get("success"):
                         st.session_state.visualizations.append(result)
 
                 elif chunk["type"] == "done":
-                    response_placeholder.markdown(full_response)
+                    # Final render without cursor
+                    formatted = format_markdown_response(full_response)
+                    response_placeholder.markdown(formatted)
 
         except Exception as e:
             st.error(f"Error processing query: {e}")
             full_response = f"I encountered an error: {str(e)}"
 
-    # Add assistant response
+    # Add assistant response to messages
     st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 
@@ -389,7 +464,6 @@ def main():
     with header_col1:
         st.title("Healthcare Data Explorer")
     with header_col2:
-        # Data Dictionary toggle button
         if st.button("📚 Data Dictionary", use_container_width=True, type="secondary"):
             st.session_state.show_data_dictionary = not st.session_state.show_data_dictionary
 
@@ -417,18 +491,36 @@ def main():
         for i, query in enumerate(example_queries):
             with cols[i % 2]:
                 if st.button(query, key=f"example_{i}", use_container_width=True):
-                    process_user_query(query)
+                    st.session_state.pending_query = query
                     st.rerun()
 
     st.markdown("---")
+
+    # Check for pending query (from example buttons)
+    if st.session_state.pending_query:
+        query = st.session_state.pending_query
+        st.session_state.pending_query = None
+
+        # Clear previous results
+        st.session_state.all_query_results = []
+        st.session_state.visualizations = []
+
+        # Show user message immediately
+        st.session_state.messages.append({"role": "user", "content": query})
+        with st.chat_message("user"):
+            st.write(query)
+
+        # Process the query
+        process_user_query(query)
+        st.rerun()
 
     # Chat history
     for message in st.session_state.messages:
         render_chat_message(message)
 
-    # Results section
-    if st.session_state.query_results:
-        render_query_results(st.session_state.query_results)
+    # Results section - show ALL query results
+    if st.session_state.all_query_results:
+        render_query_results(st.session_state.all_query_results)
 
     if st.session_state.visualizations:
         render_visualizations(st.session_state.visualizations)
@@ -436,9 +528,15 @@ def main():
     # Chat input
     if prompt := st.chat_input("Ask a question about global health data..."):
         # Clear previous results for new query
-        st.session_state.query_results = None
+        st.session_state.all_query_results = []
         st.session_state.visualizations = []
 
+        # Show user message immediately
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.write(prompt)
+
+        # Process the query
         process_user_query(prompt)
         st.rerun()
 
