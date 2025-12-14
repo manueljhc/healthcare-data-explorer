@@ -319,8 +319,8 @@ def render_query_results(results_list: list):
             df = pd.DataFrame(results["data"])
             st.dataframe(df, use_container_width=True, height=min(400, 50 + len(df) * 35))
 
-            # Export and visualize options
-            col1, col2, col3 = st.columns(3)
+            # Export options
+            col1, col2 = st.columns(2)
             with col1:
                 csv = df.to_csv(index=False)
                 st.download_button(
@@ -341,17 +341,13 @@ def render_query_results(results_list: list):
                     use_container_width=True,
                     key=f"json_download_{idx}"
                 )
-            with col3:
-                if st.button("📊 Visualize", use_container_width=True, key=f"viz_btn_{idx}"):
-                    create_visualization_for_results(results["data"], idx)
 
         st.markdown("---")
 
 
-def create_visualization_for_results(data: list, result_idx: int):
-    """Create visualizations for query results."""
+def auto_create_visualizations(data: list):
+    """Automatically create visualizations for query results."""
     if not data:
-        st.warning("No data to visualize")
         return
 
     viz_tool = VisualizationTool()
@@ -360,11 +356,9 @@ def create_visualization_for_results(data: list, result_idx: int):
     suggestions = viz_tool.suggest_charts(data)
 
     if not suggestions:
-        st.warning("No suitable visualizations found for this data")
         return
 
     # Create all suggested charts
-    created_count = 0
     for suggestion in suggestions:
         chart_result = viz_tool.create_chart(
             data,
@@ -377,12 +371,6 @@ def create_visualization_for_results(data: list, result_idx: int):
 
         if chart_result.get("success"):
             st.session_state.visualizations.append(chart_result)
-            created_count += 1
-
-    if created_count > 0:
-        st.rerun()
-    else:
-        st.error("Failed to create any visualizations")
 
 
 def render_visualizations(visualizations: list):
@@ -432,9 +420,12 @@ def process_user_query(query: str):
                     result = chunk["result"]
                     tool_name = chunk["tool_name"]
 
-                    # Store ALL query results, not just the last one
+                    # Store ALL query results and auto-generate visualizations
                     if tool_name == "execute_sql" and result.get("success"):
                         st.session_state.all_query_results.append(result)
+                        # Auto-generate visualizations for the results
+                        if result.get("data"):
+                            auto_create_visualizations(result["data"])
 
                     elif tool_name == "create_chart" and result.get("success"):
                         st.session_state.visualizations.append(result)
