@@ -47,40 +47,70 @@ class VisualizationTool:
         num_numeric = len(numeric_cols)
         num_categorical = len(categorical_cols)
 
-        # Bar chart: categorical + numeric
-        if num_categorical >= 1 and num_numeric >= 1:
-            suggestions.append({
-                "chart_type": "bar",
-                "x": categorical_cols[0],
-                "y": numeric_cols[0],
-                "rationale": f"Compare {numeric_cols[0]} across different {categorical_cols[0]} values",
-            })
+        # Identify time-related columns (can be numeric like year or categorical like date strings)
+        time_terms = ["year", "date", "month", "time", "period", "quarter"]
+        date_cols_categorical = [c for c in categorical_cols if any(
+            term in c.lower() for term in time_terms
+        )]
+        date_cols_numeric = [c for c in numeric_cols if any(
+            term in c.lower() for term in time_terms
+        )]
+        date_cols = date_cols_categorical + date_cols_numeric
+
+        # Find metric columns (numeric columns that are NOT time-related)
+        metric_cols = [c for c in numeric_cols if c not in date_cols_numeric]
+
+        # Bar chart: categorical + numeric (use metric columns for y-axis when available)
+        if num_categorical >= 1 and (metric_cols or num_numeric >= 1):
+            y_col = metric_cols[0] if metric_cols else numeric_cols[0]
+            # Only suggest bar chart if categorical has more than 1 unique value
+            if df[categorical_cols[0]].nunique() > 1:
+                suggestions.append({
+                    "chart_type": "bar",
+                    "x": categorical_cols[0],
+                    "y": y_col,
+                    "rationale": f"Compare {y_col} across different {categorical_cols[0]} values",
+                })
 
         # Pie chart: categorical + numeric with few categories
-        if num_categorical >= 1 and num_numeric >= 1:
+        if num_categorical >= 1 and (metric_cols or num_numeric >= 1):
+            y_col = metric_cols[0] if metric_cols else numeric_cols[0]
             unique_cats = df[categorical_cols[0]].nunique()
-            if unique_cats <= 10:
+            if 2 <= unique_cats <= 10:
                 suggestions.append({
                     "chart_type": "pie",
-                    "values": numeric_cols[0],
+                    "values": y_col,
                     "names": categorical_cols[0],
-                    "rationale": f"Show composition/distribution of {numeric_cols[0]} by {categorical_cols[0]}",
+                    "rationale": f"Show composition/distribution of {y_col} by {categorical_cols[0]}",
                 })
 
         # Line chart: if there's a year/date column
-        date_cols = [c for c in categorical_cols if any(
-            term in c.lower() for term in ["year", "date", "month", "time"]
-        )]
-        if date_cols and num_numeric >= 1:
+        if date_cols and metric_cols:
+            # Prefer 'year' as x-axis for time series
+            x_col = next((c for c in date_cols if 'year' in c.lower()), date_cols[0])
+            # Prefer meaningful metrics over generic columns
+            preferred_metrics = ['cases', 'deaths', 'count', 'rate', 'incidence', 'prevalence', 'total']
+            y_col = next(
+                (c for c in metric_cols if any(m in c.lower() for m in preferred_metrics)),
+                metric_cols[0]
+            )
             suggestions.append({
                 "chart_type": "line",
-                "x": date_cols[0],
-                "y": numeric_cols[0],
-                "rationale": f"Show trend of {numeric_cols[0]} over {date_cols[0]}",
+                "x": x_col,
+                "y": y_col,
+                "rationale": f"Show trend of {y_col} over {x_col}",
             })
 
-        # Scatter plot: two numeric columns
-        if num_numeric >= 2:
+        # Scatter plot: two metric columns (avoid using time columns as both axes)
+        if len(metric_cols) >= 2:
+            suggestions.append({
+                "chart_type": "scatter",
+                "x": metric_cols[0],
+                "y": metric_cols[1],
+                "rationale": f"Explore relationship between {metric_cols[0]} and {metric_cols[1]}",
+            })
+        elif num_numeric >= 2 and not metric_cols:
+            # Fallback if no metric columns identified
             suggestions.append({
                 "chart_type": "scatter",
                 "x": numeric_cols[0],
@@ -89,17 +119,24 @@ class VisualizationTool:
             })
 
         # Grouped bar: multiple categories
-        if num_categorical >= 2 and num_numeric >= 1:
+        if num_categorical >= 2 and (metric_cols or num_numeric >= 1):
+            y_col = metric_cols[0] if metric_cols else numeric_cols[0]
             suggestions.append({
                 "chart_type": "grouped_bar",
                 "x": categorical_cols[0],
-                "y": numeric_cols[0],
+                "y": y_col,
                 "color": categorical_cols[1],
-                "rationale": f"Compare {numeric_cols[0]} across {categorical_cols[0]}, grouped by {categorical_cols[1]}",
+                "rationale": f"Compare {y_col} across {categorical_cols[0]}, grouped by {categorical_cols[1]}",
             })
 
-        # Histogram: single numeric column
-        if num_numeric >= 1:
+        # Histogram: single metric column (prefer actual data metrics over time columns)
+        if metric_cols:
+            suggestions.append({
+                "chart_type": "histogram",
+                "x": metric_cols[0],
+                "rationale": f"Show distribution of {metric_cols[0]} values",
+            })
+        elif num_numeric >= 1:
             suggestions.append({
                 "chart_type": "histogram",
                 "x": numeric_cols[0],

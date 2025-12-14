@@ -362,29 +362,33 @@ def create_visualization_for_results(data: list, result_idx: int):
 
     viz_tool = VisualizationTool()
 
-    # Get chart suggestions
+    # Get chart suggestions (up to 5)
     suggestions = viz_tool.suggest_charts(data)
 
     if not suggestions:
         st.warning("No suitable visualizations found for this data")
         return
 
-    # Create the top suggested chart
-    best_suggestion = suggestions[0]
-    chart_result = viz_tool.create_chart(
-        data,
-        chart_type=best_suggestion["chart_type"],
-        x=best_suggestion.get("x"),
-        y=best_suggestion.get("y"),
-        color=best_suggestion.get("color"),
-        title=f"Visualization: {best_suggestion.get('rationale', 'Data Chart')}"
-    )
+    # Create all suggested charts
+    created_count = 0
+    for suggestion in suggestions:
+        chart_result = viz_tool.create_chart(
+            data,
+            chart_type=suggestion["chart_type"],
+            x=suggestion.get("x"),
+            y=suggestion.get("y"),
+            color=suggestion.get("color"),
+            title=suggestion.get("rationale", f"{suggestion['chart_type'].title()} Chart")
+        )
 
-    if chart_result.get("success"):
-        st.session_state.visualizations.append(chart_result)
+        if chart_result.get("success"):
+            st.session_state.visualizations.append(chart_result)
+            created_count += 1
+
+    if created_count > 0:
         st.rerun()
     else:
-        st.error(f"Failed to create visualization: {chart_result.get('error', 'Unknown error')}")
+        st.error("Failed to create any visualizations")
 
 
 def render_visualizations(visualizations: list):
