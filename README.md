@@ -6,7 +6,9 @@ A natural language interface for exploring global health data from the Anthropic
 
 - **Natural Language Queries**: Ask questions like "What are the leading causes of death in Ghana?"
 - **Automatic SQL Generation**: Claude generates optimized, read-only SQL queries
-- **Interactive Visualizations**: Plotly charts chosen based on your data
+- **Auto-Generated Visualizations**: Up to 5 chart types automatically created for each query result
+- **Contextual Analysis**: Results include baseline comparisons (historical, regional, peer countries) and per capita metrics for fair comparisons
+- **Data Dictionary**: Cached schema metadata for consistent context and faster queries
 - **Data Insights**: Automatic statistical analysis and key findings
 - **Export Options**: Download results as CSV or JSON
 - **Query Validation**: Built-in security to prevent data modification
@@ -136,6 +138,12 @@ healthcare-data-explorer/
 ├── utils/
 │   ├── security.py        # SQL validation
 │   └── export.py          # Data export utilities
+├── tests/
+│   ├── test_discovery.py  # Discovery tool tests
+│   ├── test_security.py   # SQL validation tests
+│   ├── test_sql_executor.py # SQL executor tests
+│   └── test_visualization.py # Visualization tests
+├── pytest.ini             # Pytest configuration
 └── requirements.txt
 ```
 
@@ -144,21 +152,30 @@ healthcare-data-explorer/
 ### Running tests
 
 ```bash
-python -c "
-from database.connection import DatabaseConnection
-from tools.discovery import DiscoveryTool
+# Run all tests
+python -m pytest tests/ -v
 
-db = DatabaseConnection()
-discovery = DiscoveryTool(db)
-print(discovery.get_schema_summary())
-"
+# Run specific test file
+python -m pytest tests/test_visualization.py -v
+
+# Run with coverage
+python -m pytest tests/ --cov=. --cov-report=html
 ```
+
+### Optional: Install watchdog for better performance
+
+```bash
+pip install watchdog
+```
+
+This enables faster file change detection for Streamlit's auto-reload.
 
 ### Adding new tools
 
 1. Create tool class in `tools/`
 2. Define tool schema following the existing pattern
 3. Register tool in `agent/orchestrator.py`
+4. Add unit tests in `tests/`
 
 ## License
 
