@@ -283,7 +283,7 @@ def render_chat_message(message: dict):
                         st.code(sql, language="sql")
                 if "visualization" in content:
                     fig = pio.from_json(content["visualization"])
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch", key="chat_viz")
                 if "insights" in content:
                     st.markdown("**Key Insights:**")
                     for insight in content["insights"]:
@@ -384,7 +384,7 @@ def render_visualizations(visualizations: list):
         if viz.get("success") and viz.get("figure_json"):
             try:
                 fig = pio.from_json(viz["figure_json"])
-                st.plotly_chart(fig, use_container_width=True, key=f"viz_{i}")
+                st.plotly_chart(fig, width="stretch", key=f"viz_{i}")
             except Exception as e:
                 st.error(f"Error rendering visualization: {e}")
 
