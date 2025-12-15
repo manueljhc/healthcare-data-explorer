@@ -73,6 +73,15 @@ Open http://localhost:8501 in your browser.
 
 ## Architecture
 
+### Startup (one-time)
+```
+┌───────────────┐         ┌─────────────┐         ┌───────────────────┐
+│   Discovery   │ ──────▶ │   SQLite    │ ──────▶ │  Data Dictionary  │
+│     Tool      │  query  │  Database   │  cache  │ (schema+metadata) │
+└───────────────┘  schema └─────────────┘         └───────────────────┘
+```
+
+### Runtime (per query)
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                   Streamlit Frontend                     │
@@ -83,31 +92,29 @@ Open http://localhost:8501 in your browser.
 ┌─────────────────────────────────────────────────────────┐
 │              Agent Orchestrator (Claude)                 │
 │     Interprets queries, coordinates tools, generates     │
-│              insights and visualizations                 │
+│     insights and visualizations                          │
+│                                                          │
+│     ┌───────────────────┐                               │
+│     │  Data Dictionary  │ ◀── injected into prompt      │
+│     │ (schema+metadata) │                               │
+│     └───────────────────┘                               │
 └─────────────────────────────────────────────────────────┘
-         │                 │                  │
-         │    ┌────────────┴────────────┐     │
-         │    ▼                         ▼     │
-         │  ┌───────────────────────────────┐ │
-         │  │      Data Dictionary          │ │
-         │  │  (Cached schema + metadata)   │ │
-         │  └───────────────────────────────┘ │
-         │           │ generated once         │
-         ▼           ▼                        ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-│   Discovery   │ │ SQL Executor  │ │ Visualization │
-│     Tool      │ │    Tool       │ │     Tool      │
-└───────────────┘ └───────────────┘ └───────────────┘
-        │                  │                  │
-        └──────────────────┼──────────────────┘
-                           ▼
-                    ┌─────────────┐
-                    │   SQLite    │
-                    │  Database   │
-                    └─────────────┘
+                           │
+            ┌──────────────┴──────────────┐
+            ▼                              ▼
+   ┌───────────────┐              ┌───────────────┐
+   │ SQL Executor  │              │ Visualization │
+   │    Tool       │              │     Tool      │
+   └───────────────┘              └───────────────┘
+            │
+            ▼
+   ┌─────────────┐
+   │   SQLite    │
+   │  Database   │
+   └─────────────┘
 ```
 
-The **Data Dictionary** is generated once on startup by the Discovery Tool, then cached and shared with the Orchestrator and SQL Executor. This avoids repeated schema queries and provides consistent metadata context to the LLM.
+The **Discovery Tool** queries the database schema once at startup and generates a **Data Dictionary** containing table structures, column types, sample values, and row counts. This cached artifact is injected into the Agent Orchestrator's system prompt, enabling Claude to write accurate SQL without repeated schema queries.
 
 ## Security Measures
 
